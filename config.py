@@ -31,8 +31,8 @@ class Config(object):
         "beam_width": 5,
         "mem_num": 60
     }
-    data_dir = 'Data/'
-    vec_file = './vec.txt'
+    data_dir = '/content/drive/MyDrive/'
+    vec_file = '/content/drive/MyDrive/vec.txt'
     init_scale = 0.04
     learning_rate = 0.001
     max_grad_norm = 10 #gradient clipping

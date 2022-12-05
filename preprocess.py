@@ -13,13 +13,13 @@ def Read_WordVec(config):
         vec_ls =[]
         fvec.readline()
         
-        wordLS.append(u'PAD')
+        wordLS.append(u'<PAD>')
         vec_ls.append([0]*config.word_embedding_size)
-        wordLS.append(u'START')
+        wordLS.append(u'<START>')
         vec_ls.append([0]*config.word_embedding_size)
-        wordLS.append(u'END')
+        wordLS.append(u'<EOS>')
         vec_ls.append([0]*config.word_embedding_size)
-        wordLS.append(u'UNK')
+        wordLS.append(u'<UNK>')
         vec_ls.append([0]*config.word_embedding_size)
         for line in fvec:
             line = line.split()

@@ -39,7 +39,7 @@ if __name__ == '__main__':
     idx_to_word = { i:ch for i,ch in enumerate(vocab) }
     data_size, _vocab_size = len(data), len(vocab)
 
-    config_g["vocab_dict"] = vocab
+    config_g["vocab_dict"] = word_to_idx
 
     # config_g["pretrain_wv"] = np.load("./data_zhihu/correct_data/wv_tencent.npy")
     # assert config_g["embedding_size"] == config_g["pretrain_wv"].shape[1]
