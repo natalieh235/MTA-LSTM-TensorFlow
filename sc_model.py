@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.layers import core as layers_core
-from config import Config
+from Config import Config
 from util import *
 from collections import defaultdict
 from sc_lstm_cell import SCLSTM, ActionWrapper, SC_DropoutWrapper

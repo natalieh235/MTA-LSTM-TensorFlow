@@ -1,4 +1,5 @@
-from tensorflow.nn.rnn_cell import RNNCell
+# from tensorflow.nn.rnn_cell import RNNCell. [module not found error]
+from tensorflow.compat.v1.nn.rnn_cell import RNNCell
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import nn_ops

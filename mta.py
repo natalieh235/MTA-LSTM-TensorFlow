@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.layers import core as layers_core
-from config import Config
+from Config import Config
 from util import *
 from tensorflow.nn.rnn_cell import LSTMStateTuple
 from collections import defaultdict

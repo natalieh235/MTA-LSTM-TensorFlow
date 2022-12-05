@@ -1,4 +1,4 @@
-from config import Config
+from Config import Config
 import tensorflow as tf
 import numpy as np
 from dataloader import GenDataLoader

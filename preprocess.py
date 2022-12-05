@@ -8,7 +8,7 @@ config = Config.Config()
 config.vocab_size += 4
 
 def Read_WordVec(config):
-    with open(config.vec_file, 'r') as fvec:
+    with open(config.vec_file, 'rb') as fvec:
         wordLS = []
         vec_ls =[]
         fvec.readline()
@@ -24,7 +24,7 @@ def Read_WordVec(config):
         for line in fvec:
             line = line.split()
             try:
-                word = line[0]#.decode('utf-8')
+                word = line[0].decode('utf-8')
                 vec = [float(i) for i in line[1:]]
                 assert len(vec) == config.word_embedding_size
                 wordLS.append(word)
@@ -33,11 +33,13 @@ def Read_WordVec(config):
                 print("exception occurred")
                 #print(line[0])
         #assert len(wordLS) == config.vocab_size
+        # print(wordLS)
         word_vec = np.array(vec_ls, dtype=np.float32)
-        
+        # print(word_vec)
         pickle.dump(word_vec, open('word_vec.pkl','wb'), protocol=pickle.HIGHEST_PROTOCOL)
         pickle.dump(wordLS, open('word_voc.pkl','wb'), protocol=pickle.HIGHEST_PROTOCOL)
-        
+        # print(wordLS[0:10])
+        # print(word_vec[0:10])
     return wordLS, word_vec
 
 def Read_Data(config):
@@ -57,6 +59,7 @@ def Read_Data(config):
 print('loading the trainingdata...')
 DATADIR = config.data_dir
 vocab, _ = Read_WordVec(config)
+vocab = set(vocab)
 
 data = Read_Data(config)
 

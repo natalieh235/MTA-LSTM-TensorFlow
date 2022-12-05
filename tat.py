@@ -1,10 +1,11 @@
 import tensorflow as tf
 from tensorflow.python.layers import core as layers_core
-from config import Config
+from Config import Config
 from util import *
-from tensorflow.nn.rnn_cell import LSTMStateTuple
+# from tensorflow.nn.rnn_cell import LSTMStateTuple
 from collections import defaultdict
 from topic_wrapper import TopicAttentionWrapper
+import tensorflow_addons as tfa
 
 
 class TAT:
@@ -31,76 +32,116 @@ class TAT:
         self.keep_prob = config["keep_prob"]
         self.norm_init = config["norm_init"]
         self.normal_std = config["normal_std"]
-        self.pretrain_wv = config["pretrain_wv"]
+        # self.pretrain_wv = config["pretrain_wv"]
         self.beam_width = config["beam_width"]
         self.mem_num = config["mem_num"]
         self.refers = None
         self.rand_uni_init = tf.random_uniform_initializer(-self.norm_init, self.norm_init,
                                                            seed=123)
-        self.trunc_norm_init = tf.truncated_normal_initializer(stddev=self.normal_std)
+        # self.trunc_norm_init = tf.truncated_normal_initializer(stddev=self.normal_std)
+        self.trunc_norm_init = tf.compat.v1.truncated_normal_initializer(stddev=self.normal_std)
+        
         self.sm = SmoothingFunction()
 
     def build_placeholder(self):
         # placeholder
-        self.topic_input = tf.placeholder(tf.int32, [self.batch_size, self.topic_num], name="topic_index")
-        self.topic_len = tf.placeholder(tf.int32, [self.batch_size], name="topic_len")
+        tf.compat.v1.disable_eager_execution()
+        self.topic_input = tf.compat.v1.placeholder(tf.int32, [self.batch_size, self.topic_num], name="topic_index")
+        self.topic_len = tf.compat.v1.placeholder(tf.int32, [self.batch_size], name="topic_len")
 
-        self.target_input = tf.placeholder(tf.int32, [self.batch_size, None], name="target_index")
-        self.target_len = tf.placeholder(tf.int32, [self.batch_size], name="target_len")
+        self.target_input = tf.compat.v1.placeholder(tf.int32, [self.batch_size, None], name="target_index")
+        self.target_len = tf.compat.v1.placeholder(tf.int32, [self.batch_size], name="target_len")
+
+        # self.topic_input = tf.Variable(shape = [self.batch_size, self.topic_num], dtype=tf.int32,name="topic_index")
+        # self.topic_len = tf.Variable(shape = [self.batch_size, self.topic_num], dtype=tf.int32, name="topic_len")
+
+        # self.target_input = tf.Variable(shape = [self.batch_size, self.topic_num], dtype=tf.int32, name="target_index")
+        # self.target_len = tf.Variable(shape = [self.batch_size, self.topic_num], dtype=tf.int32, name="target_len")
+
         # self.target_mask = tf.placeholder(tf.float32, [self.batch_size, self.max_len], name="target_mask")
 
     def build_graph(self):
         print("building generator graph...")
-        with tf.variable_scope("seq2seq"):
-            with tf.variable_scope("embedding"):
+        with tf.compat.v1.variable_scope("seq2seq"):
+            with tf.compat.v1.variable_scope("embedding"):
                 # shared by encoder and decoder
-                # self.embedding = tf.get_variable('embedding', [self.vocab_size, self.embedding_size], dtype=tf.float32,
-                #                                  trainable=True, initializer=self.rand_uni_init)
+                self.embedding = tf.compat.v1.get_variable('embedding', [self.vocab_size, self.embedding_size], dtype=tf.float32,
+                                                 trainable=True, initializer=self.rand_uni_init)
                 # using pretrain word vector
-                self.embedding = tf.get_variable('embedding', [self.vocab_size, self.embedding_size], dtype=tf.float32,
-                                                 trainable=True, initializer=tf.constant_initializer(self.pretrain_wv))
-            with tf.variable_scope("encoder"):
+                # self.embedding = tf.get_variable('embedding', [self.vocab_size, self.embedding_size], dtype=tf.float32,
+                #                                  trainable=True, initializer=tf.constant_initializer(self.pretrain_wv))
+            with tf.compat.v1.variable_scope("encoder"):
                 topic_embedded = tf.nn.embedding_lookup(self.embedding, self.topic_input)
                 
-            with tf.variable_scope("decoder"):
+            with tf.compat.v1.variable_scope("decoder"):
                 def _get_cell(_num_units):
-                    cell = tf.contrib.rnn.BasicLSTMCell(_num_units)
+                    # cell = tf.compat.v1.contrib.rnn.BasicLSTMCell(_num_units)
+                    # cell = tf.compat.v1.nn.rnn_cell.LSTMCell(_num_units)
+                    cell = tf.keras.layers.LSTMCell(_num_units)
 
-                    if self.training_flag:
-                        cell = tf.contrib.rnn.DropoutWrapper(cell)
+                    # if self.training_flag:
+                        # cell = tf.compat.v1.contrib.rnn.DropoutWrapper(cell)
+                        # cell = tf.compat.v1.nn.rnn_cell.DropoutWrapper(cell)
+                        # cell = tf.nn.RNNCellDropoutWrapper(cell)
 
-                    cell = TopicAttentionWrapper(cell, topic_embedded)
+                    attention_mechanism = tfa.seq2seq.LuongAttention(_num_units, topic_embedded, memory_sequence_length=self.sequence_lengths)
+                    # cell = TopicAttentionWrapper(cell, topic_embedded)
+                    cell = tfa.seq2seq.AttentionWrapper(
+                      cell,
+                      attention_mechanism,
+                      attention_layer_size=_num_units
+                    )
                     # cell = MTAWrapper(cell, topic_embedded)
                     return cell
 
                 # single layer
 
                 self.decoder_cell = _get_cell(self.hidden_size)
-                self.initial_state = self.decoder_cell.zero_state(batch_size=self.batch_size,
+                self.initial_state = self.decoder_cell.get_initial_state(batch_size=self.batch_size,
                                                                   dtype=tf.float32)
+                # print('initial state', self.initial_state)
+
                 self.decoder_input_embedded = tf.nn.embedding_lookup(self.embedding, self.target_input)
-                self.output_layer = layers_core.Dense(self.vocab_size, use_bias=False)
+                # self.output_layer = layers_core.Dense(self.vocab_size, use_bias=False)
+                self.output_layer = tf.keras.layers.Dense(self.vocab_size, use_bias=False)
 
                 # pre-train with targets #
-                helper_pt = tf.contrib.seq2seq.TrainingHelper(
-                    inputs=self.decoder_input_embedded,
-                    sequence_length=self.sequence_lengths,
-                    time_major=False,
-                )
+                # helper_pt = tf.compat.v1.contrib.seq2seq.TrainingHelper(
+                #     inputs=self.decoder_input_embedded,
+                #     sequence_length=self.sequence_lengths,
+                #     time_major=False,
+                # )
 
-                decoder_pt = tf.contrib.seq2seq.BasicDecoder(
-                    cell=self.decoder_cell,
-                    helper=helper_pt,
-                    initial_state=self.initial_state,
-                    output_layer=self.output_layer
-                )
+                # replaces helper
+                sampler = tfa.seq2seq.sampler.TrainingSampler()
 
-                outputs_pt, _final_state, sequence_lengths_pt = tf.contrib.seq2seq.dynamic_decode(
-                    decoder=decoder_pt,
-                    output_time_major=False,
-                    maximum_iterations=self.max_len,
-                    swap_memory=True,
-                    impute_finished=True
+                # decoder_pt = tf.compat.v1.contrib.seq2seq.BasicDecoder(
+                #     cell=self.decoder_cell,
+                #     helper=helper_pt,
+                #     initial_state=self.initial_state,
+                #     output_layer=self.output_layer
+                # )
+                decoder_pt = tfa.seq2seq.BasicDecoder(cell=self.decoder_cell, sampler=sampler, output_layer=self.output_layer)
+                # _, _, s = decoder_pt.initialize(self.decoder_input_embedded, self.initial_state)
+                # print('help', s)
+                # outputs_pt, _final_state, sequence_lengths_pt = tf.contrib.seq2seq.dynamic_decode(
+                #     decoder=decoder_pt,
+                #     output_time_major=False,
+                #     maximum_iterations=self.max_len,
+                #     swap_memory=True,
+                #     impute_finished=True
+                # )
+                outputs_pt, _final_state, sequence_lengths_pt = tfa.seq2seq.dynamic_decode(
+                  decoder=decoder_pt,
+                  output_time_major=False,
+                  maximum_iterations=self.max_len,
+                  swap_memory=True,
+                  impute_finished=True,
+                  decoder_init_input= self.decoder_input_embedded,
+                  decoder_init_kwargs={
+                    'initial_state': self.initial_state,
+                  }
+                  # training=True
                 )
 
                 self.logits_pt = outputs_pt.rnn_output
@@ -112,9 +153,9 @@ class TAT:
                 # print("target input:", self.target_input.shape)
                 # print("logits:", self.logits_pt)
 
-                self.target_output = tf.placeholder(tf.int32, [None, None])
+                self.target_output = tf.compat.v1.placeholder(tf.int32, [None, None])
 
-                self.pretrain_loss = tf.contrib.seq2seq.sequence_loss(
+                self.pretrain_loss = tfa.seq2seq.sequence_loss(
                     self.logits_pt,
                     self.target_output,
                     masks,
@@ -124,31 +165,57 @@ class TAT:
                 self.global_step = tf.Variable(0, trainable=False)
 
                 # gradient clipping
-                optimizer = tf.train.AdamOptimizer(self.learning_rate)
+                optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.learning_rate)
+
                 gradients, v = zip(*optimizer.compute_gradients(self.pretrain_loss))
                 gradients, _ = tf.clip_by_global_norm(gradients, self.grad_norm)
                 self.pretrain_updates = optimizer.apply_gradients(zip(gradients, v), global_step=self.global_step)
 
-            # infer
-            helper_i = tf.contrib.seq2seq.GreedyEmbeddingHelper(
-                self.embedding,
-                tf.fill([self.batch_size], self.vocab_dict['<GO>']),
-                end_token=self.vocab_dict['<EOS>']
-            )
+                # with tf.GradientTape() as tape:
+                #   # Forward pass.
+                #   self.logits_pt = outputs_pt.rnn_output
+                #   # Loss value for this batch.
+                #   loss_value = tfa.seq2seq.sequence_loss(
+                #     self.logits_pt,
+                #     self.target_output,
+                #     masks,
+                #     average_across_timesteps=True,
+                #     average_across_batch=True
+                #   )
 
-            decoder_i = tf.contrib.seq2seq.BasicDecoder(
+                # gradients = tape.gradient(loss_value)
+
+               
+
+            # infer
+
+            # helper_i = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+            #     self.embedding,
+            #     tf.fill([self.batch_size], self.vocab_dict['<GO>']),
+            #     end_token=self.vocab_dict['<EOS>']
+            # )
+            
+            print("TEST", self.vocab_dict['<EOS>'])
+            greedy_sampler = tfa.seq2seq.sampler.GreedyEmbeddingSampler()
+
+            decoder_i = tfa.seq2seq.BasicDecoder(
                 cell=self.decoder_cell,
-                helper=helper_i,
+                sampler=greedy_sampler,
                 initial_state=self.initial_state,
                 output_layer=self.output_layer
             )
 
-            outputs_i, _final_state_i, sequence_lengths_i = tf.contrib.seq2seq.dynamic_decode(
+            outputs_i, _final_state_i, sequence_lengths_i = tfa.seq2seq.dynamic_decode(
                 decoder=decoder_i,
                 output_time_major=False,
                 maximum_iterations=self.max_len,
                 swap_memory=True,
-                impute_finished=True
+                impute_finished=True,
+                decoder_init_kwargs={
+                  'embedding': self.embedding,
+                  'start_tokens': tf.fill([self.batch_size], self.vocab_dict['<GO>']),
+                  'end_token': self.vocab_dict['<EOS>']
+                }
             )
 
             sample_id = outputs_i.sample_id
